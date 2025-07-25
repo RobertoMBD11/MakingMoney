@@ -1,23 +1,9 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-
-# Carga el CSV generado previamente
-df = pd.read_csv("fake_crypto_day.csv", parse_dates=['timestamp'])
-
-# Crear el gráfico de precios
-plt.figure(figsize=(12, 6))
-plt.plot(df['timestamp'], df['close'], label='Precio de Cierre', color='dodgerblue')
-plt.title('Precio Simulado de Criptomoneda (1 Día)')
-plt.xlabel('Hora')
-plt.ylabel('Precio (USD)')
-plt.xticks(rotation=45)
-plt.grid(True)
-plt.legend()
-plt.tight_layout()
-plt.show()
-
-import pandas as pd
 import numpy as np
+
+
+
 
 def compute_SMA_normalized(series, window):
     sma = series.rolling(window=window).mean()
@@ -46,10 +32,29 @@ def compute_ATR_normalized(df, window=14):
     atr_normalized = atr / df['close']
     
     return atr, atr_normalized
-# Asumiendo que ya tienes el DataFrame df con las columnas open, high, low, close, volume
-df['SMA_20'] = compute_SMA_normalized(df['close'], 20)
-df['RSI_14'] = compute_RSI(df['close'], 14)
-df['ATR_14'] = compute_ATR_normalized(df, 14)
 
-# Mostrar primeras filas para verificar
-print(df[['timestamp', 'close', 'SMA_20', 'RSI_14', 'ATR_14']].head(10))
+
+if __name__ == "__main__":
+    # Carga el CSV generado previamente
+    df = pd.read_csv("fake_crypto_day.csv", parse_dates=['timestamp'])
+
+    # Crear el gráfico de precios
+    plt.figure(figsize=(12, 6))
+    plt.plot(df['timestamp'], df['close'], label='Precio de Cierre', color='dodgerblue')
+    plt.title('Precio Simulado de Criptomoneda (1 Día)')
+    plt.xlabel('Hora')
+    plt.ylabel('Precio (USD)')
+    plt.xticks(rotation=45)
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+    # Asumiendo que ya tienes el DataFrame df con las columnas open, high, low, close, volume
+    df['SMA_20'] = compute_SMA_normalized(df['close'], 20)
+    df['RSI_14'] = compute_RSI(df['close'], 14)
+    atr, atr_norm = compute_ATR_normalized(df, 14)
+    #df['ATR_14'] = atr
+    df['ATR_14'] = atr_norm
+
+    # Mostrar primeras filas para verificar
+    print(df[['timestamp', 'close', 'SMA_20', 'RSI_14', 'ATR_14']].head(24))
