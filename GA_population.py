@@ -3,31 +3,86 @@ import itertools
 import random
 from typing import List, Dict, Callable
 
+import numpy as np
+from typing import List, Dict
+
 class Individual:
-    def __init__(self, genes_dict=None):
-        # genes_dict: dict code -> acción (int)
-        self.genes = genes_dict if genes_dict else {}
+    def __init__(self, param_bins: Dict[str, List[float]], genes_array: np.ndarray = None):
+        """
+        param_bins: dict de parámetros y sus bins (necesario para mapear codes a índices)
+        genes_array: numpy array con los genes (acciones)
+        """
+        self.param_bins = param_bins
+        self.num_genes = self._calc_num_genes()
+        if genes_array is None:
+            self.genes = np.zeros(self.num_genes, dtype=np.int8)  # inicializa con ceros
+        else:
+            assert len(genes_array) == self.num_genes, "genes_array no tiene la longitud correcta"
+            self.genes = genes_array
         self.fitness = None
 
-    def get(self, code, default=0):
-        return self.genes.get(code, default)
+    def _calc_num_genes(self) -> int:
+        bases = [len(self.param_bins[p]) + 1 for p in self.param_bins]
+        total_codes = 1
+        for b in bases:
+            total_codes *= b
+        return total_codes * 2  # por el estado (0 o 1)
 
-    def set(self, code, action):
-        self.genes[code] = action
+    def code_to_index(self, code: str) -> int:
+        parts = list(map(int, code.split('_')))
+        state = parts[-1]
+        param_indices = parts[:-1]
+
+        num_params = len(self.param_bins)
+        assert len(param_indices) == num_params, "Código incompatible con número de parámetros"
+
+        bases = [len(self.param_bins[p]) + 1 for p in self.param_bins]
+
+        index = 0
+        for i in range(num_params):
+            mult = 1
+            for b in bases[i+1:]:
+                mult *= b
+            index += param_indices[i] * mult
+
+        index = index * 2 + state
+        return index
+
+    def get(self, code: str, default=0) -> int:
+        idx = self.code_to_index(code)
+        if 0 <= idx < self.num_genes:
+            return int(self.genes[idx])
+        return default
+
+    def set(self, code: str, action: int):
+        idx = self.code_to_index(code)
+        if 0 <= idx < self.num_genes:
+            self.genes[idx] = action
 
     def set_fitness(self, fitness_value: float):
         self.fitness = fitness_value
 
-    def __getitem__(self, code):
-        # para poder hacer individuo[code]
-        return self.genes.get(code, 0)
+    def __getitem__(self, code: str) -> int:
+        return self.get(code)
 
-    def __setitem__(self, code, action):
-        self.genes[code] = action
+    def __setitem__(self, code: str, action: int):
+        self.set(code, action)
+
+    def generate_all_codes(self) -> List[str]:
+        from itertools import product
+
+        param_names = list(self.param_bins.keys())
+        bin_counts = [len(self.param_bins[p]) + 1 for p in param_names]  # +1 por np.digitize
+        all_combinations = product(*[range(n) for n in bin_counts], [0, 1])
+        codes = ["_".join(map(str, comb)) for comb in all_combinations]
+        return codes
+
+    def generate_dict(self) -> Dict[str, int]:
+        codes = self.generate_all_codes()
+        return {code: int(self.genes[idx]) for idx, code in enumerate(codes)}
 
     def __repr__(self):
-        return f"Individual(genes={len(self.genes)} genes, fitness={self.fitness})"
-
+        return f"Individual(num_genes={len(self.genes)}, fitness={self.fitness}, genes_dict={self.generate_dict()})"
 
 
 class Population:
@@ -61,19 +116,20 @@ class Population:
 
     def _generate_random_individuals(self):
         individuals = []
-        mid = self.num_genes // 2
+
         for _ in range(self.num_individuals):
-            # Creamos un array de acciones como antes
             genes_array = np.zeros(self.num_genes, dtype=np.int8)
-            genes_array[:mid] = np.random.randint(0, 2, size=mid)     # estado 0 (acciones 0 o 1)
-            genes_array[mid:] = np.random.randint(2, 4, size=self.num_genes - mid)  # estado 1 (acciones 2 o 3)
 
-            # Convertimos genes_array a diccionario code->acción usando index_to_code
-            genes_dict = {self.all_codes[i]: int(genes_array[i]) for i in range(self.num_genes)}
+            for i, code in enumerate(self.all_codes):
+                estado = int(code.split('_')[-1])
+                if estado == 0:
+                    genes_array[i] = np.random.randint(0, 2)  # 0 o 1
+                else:  # estado == 1
+                    genes_array[i] = np.random.randint(0, 2)  # 2 o 3  era para comprobar que está bien
 
-            # Creamos el individuo con el dict de genes
-            ind = Individual(genes_dict=genes_dict)
+            ind = Individual(param_bins=self.param_bins, genes_array=genes_array)
             individuals.append(ind)
+
         return individuals
 
     def describe(self):
@@ -81,6 +137,12 @@ class Population:
         print(f" - Num individuals: {self.num_individuals}")
         print(f" - Num genes per individual: {self.num_genes}")
         print(f" - Param bins: {self.param_bins}")
+
+    def get_chromosomes(self) -> List[np.ndarray]:
+        """
+        Devuelve una lista con los arrays de genes (cromosomas) de cada individuo.
+        """
+        return [ind.genes.copy() for ind in self.individuals]
 
 def discretize(value, bins):
     """Asigna un valor al índice de intervalo según los bins."""
@@ -180,13 +242,10 @@ if __name__ == "__main__":
 
     # 3. Obtener código de esa vela
     code = get_code_from_candle(candle, state, param_bins)
+    code = '0_1_0_1'
     print(f"Code: {code}")
     # 4. Escoger un individuo random y ver qué acción toma
     individuo_random = population[random.randint(0, len(population)-1)]
-    
-    idx = code_to_index(code,param_bins)
-    print(population.all_codes[idx])
     action = individuo_random.get(code, 0)
-
-    print(f"Código generado: {code}")
-    print("Acción a tomar:", acciones.get(action, "CÓDIGO DESCONOCIDO"))
+    print("Acción:",action)
+    print(individuo_random)
