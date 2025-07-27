@@ -3,7 +3,7 @@ import numpy as np
 from datetime import datetime, timedelta
 
 # Parámetros de la simulación
-np.random.seed(42)
+np.random.seed(41)
 n_intervals = 288  # 24h con datos cada 5 minutos
 start_price = 10000  # Precio inicial
 mu = 0.0002  # Tendencia diaria esperada (positiva)

@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import pygad
 import matplotlib.pyplot as plt
+from GA_model import GA_Trainer
+import random
 
 
 def fitness(individuo, df, dinero_invertido):
@@ -35,7 +37,7 @@ def fitness(individuo, df, dinero_invertido):
     return sum(beneficios)
 
 
-def fitness_func(ga_instance, solution, solution_idx):
+"""def fitness_func(ga_instance, solution, solution_idx):
     # Acceder a variables externas (df, dinero_invertido) vía ga_instance o globales
     df = ga_instance.df
     dinero_invertido = ga_instance.dinero_invertido
@@ -47,19 +49,25 @@ def fitness_func(ga_instance, solution, solution_idx):
     # Ahora llama tu función fitness original que usaba individuo, df, dinero_invertido
     fitness_value = fitness(individuo, df, dinero_invertido)
     
-    return fitness_value
+    return fitness_value"""
 
-def on_generation(ga_instance):
-    # Obtenemos el fitness de toda la población actual
-    current_fitness = ga_instance.last_generation_fitness
-    avg_fitness = sum(current_fitness) / len(current_fitness)
-    
-    # Lo guardamos
-    average_fitness_per_generation.append(avg_fitness)
+def on_generation(gen, best_individual, avg_train, avg_test):
+    print(f"Gen {gen} | Train fitness: {avg_train:.4f}", end='')
+    if avg_test is not None:
+        print(f" | Test fitness: {avg_test:.4f}", end='')
+    print()
 
-    # (Opcional) Mostrar por consola
-    print(f"Generación {ga_instance.generations_completed}: Avg = {avg_fitness:.2f} | Max = {ga_instance.best_solution()[1]:.2f}")
 
+def split_dataset_folder(folder_path, train_ratio=0.8, seed=42):
+    random.seed(seed)
+    all_files = [f for f in os.listdir(folder_path) if f.endswith(".csv")]
+    random.shuffle(all_files)
+
+    split_point = int(len(all_files) * train_ratio)
+    train_files = all_files[:split_point]
+    test_files = all_files[split_point:]
+
+    return train_files, test_files
 
 if __name__ == "__main__":
     acciones = {0: "NO HACER NADA", 1: "ENTRAR", 2: "MANTENER", 3: "SALIR"}
@@ -74,12 +82,19 @@ if __name__ == "__main__":
     population = Population(param_bins=param_bins, num_individuals=100)
 
     # 2. Cargar datos y calcular indicadores
-    df = pd.read_csv("fake_crypto_day.csv", parse_dates=['timestamp'])
-    df['rsi'] = compute_RSI(df['close'])
-    df['sma'] = compute_SMA_normalized(df['close'], window=14)
-    _, df['atr'] = compute_ATR_normalized(df, window=14)
-    df.dropna(inplace=True)
-    df['semicode'] = df.apply(lambda row: get_semicode_from_candle(row, param_bins), axis=1)
+    df_training = pd.read_csv("fake_crypto_day_1.csv", parse_dates=['timestamp'])
+    df_training['rsi'] = compute_RSI(df_training['close'])
+    df_training['sma'] = compute_SMA_normalized(df_training['close'], window=14)
+    _, df_training['atr'] = compute_ATR_normalized(df_training, window=14)
+    df_training.dropna(inplace=True)
+    df_training['semicode'] = df_training.apply(lambda row: get_semicode_from_candle(row, param_bins), axis=1)
+
+    df_test = pd.read_csv("fake_crypto_day_2.csv", parse_dates=['timestamp'])
+    df_test['rsi'] = compute_RSI(df_test['close'])
+    df_test['sma'] = compute_SMA_normalized(df_test['close'], window=14)
+    _, df_test['atr'] = compute_ATR_normalized(df_test, window=14)
+    df_test.dropna(inplace=True)
+    df_test['semicode'] = df_test.apply(lambda row: get_semicode_from_candle(row, param_bins), axis=1)
 
     # Other parameters
     initial_population = population.get_chromosomes()
@@ -88,38 +103,24 @@ if __name__ == "__main__":
 
     average_fitness_per_generation = [] 
 
-    ga_instance = pygad.GA(
-        num_generations=10,
-        gene_space=[0, 1],
+
+
+    trainer = GA_Trainer(
+        param_bins=param_bins,
+        fitness_func=fitness,
+        num_generations=20,
+        sol_per_pop=30,
         num_parents_mating=10,
-        sol_per_pop=20,
-        num_genes=population.num_genes,
-        on_generation=on_generation,
-        fitness_func=fitness_func,
-        gene_type=int,
-        mutation_type="random",
-        mutation_probability=0.1,
-        initial_population=initial_population,  # list of numpy arrays
-        )
-    
-    ga_instance.df = df
-    ga_instance.dinero_invertido = dinero_invertido
-    ga_instance.param_bins = param_bins
+        mutation_probability=0.05,
+        on_generation=on_generation
+    )
 
-    ga_instance.run()
-    solution, solution_fitness, solution_idx = ga_instance.best_solution()
-    print(f"Mejor solución: {solution}, fitness: {solution_fitness}")
-    
-
-    best_fitness = ga_instance.best_solutions_fitness
-
-    plt.plot(best_fitness, label="Best Fitness")
-    plt.xlabel("Generación")
-    plt.ylabel("Fitness")
-    plt.title("Evolución del Fitness")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+    best_individual = trainer.run(data_train=df_training,
+                              dinero_invertido=10000,
+                              data_test=df_test)
+    print("\nMejor individuo final:")
+    print(best_individual)
+        
 
 
 
