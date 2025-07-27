@@ -32,10 +32,11 @@ class GA_Trainer:
         self.best_individuals = []
         self.avg_fitness_per_gen = []
 
-    def evaluate_fitness(self, data, dinero_invertido):
+    def evaluate_fitness(self, data_list, dinero_invertido):
         fitnesses = []
         for ind in self.population.individuals:
-            fit = self.fitness_func(ind, data, dinero_invertido)
+            #print(ind)
+            fit = self.fitness_func(ind, data_list, dinero_invertido)
             ind.set_fitness(fit)
             fitnesses.append(fit)
         return fitnesses
@@ -65,14 +66,16 @@ class GA_Trainer:
 
     def run(self, data_train, dinero_invertido, data_test=None):
         for gen in range(self.num_generations):
-            # 1. Evaluar fitness en TRAIN
+            # 1. Evaluar fitness en TRAIN (se actualizan los fitness de los individuos)
             fitnesses_train = self.evaluate_fitness(data_train, dinero_invertido)
 
-            # 2. Evaluar fitness en TEST (si hay)
+            # 2. Evaluar fitness en TEST (solo para diagnóstico, no se guarda en individuos)
             fitnesses_test = None
             if data_test is not None:
-                fitnesses_test = [self.fitness_func(ind, data_test, dinero_invertido)
-                                for ind in self.population.individuals]
+                fitnesses_test = []
+                for ind in self.population.individuals:
+                    fit_test = self.fitness_func(ind, data_test, dinero_invertido)
+                    fitnesses_test.append(fit_test)
 
             # 3. Registrar mejor y promedio (solo de entrenamiento)
             best_ind = max(self.population.individuals, key=lambda ind: ind.fitness)
@@ -81,20 +84,23 @@ class GA_Trainer:
             self.best_individuals.append(best_ind)
             self.avg_fitness_per_gen.append(avg_fitness)
 
-            # 4. Callback de generación
+            # 4. Callback de generación con ambos fitnesses
             if self.on_generation:
                 avg_test = np.mean(fitnesses_test) if fitnesses_test is not None else None
                 self.on_generation(gen, best_ind, avg_fitness, avg_test)
 
-            # 5. Reproducción
+            # 5. Reproducción (selección, cruce, mutación)
             parents = self.select_mating_pool()
             children = self.crossover(parents)
             for child in children:
                 self.mutate(child)
 
+            # 6. Actualizar población para la siguiente generación
             self.population.individuals = parents + children
 
-        # Recalcular fitness final para asegurar consistencia
+        # 7. Recalcular fitness final en TRAIN para asegurar consistencia
         self.evaluate_fitness(data_train, dinero_invertido)
 
+        # 8. Retornar mejor individuo final basado en fitness de entrenamiento
         return max(self.population.individuals, key=lambda ind: ind.fitness)
+

@@ -2,6 +2,7 @@ import numpy as np
 import itertools
 import random
 from typing import List, Dict, Callable
+import ast
 
 import numpy as np
 from typing import List, Dict
@@ -29,7 +30,10 @@ class Individual:
         return total_codes * 2  # por el estado (0 o 1)
 
     def code_to_index(self, code: str) -> int:
-        parts = list(map(int, code.split('_')))
+        try:
+            parts = list(map(int, code.split('_')))
+        except ValueError:
+            raise ValueError(f"Código inválido recibido en code_to_index: '{code}'")
         state = parts[-1]
         param_indices = parts[:-1]
 
@@ -171,7 +175,11 @@ def get_code_from_candle(candle, state, param_bins):
     return code
 
 def code_to_index(code: str, param_bins: Dict[str, List[float]]) -> int:
-    parts = list(map(int, code.split('_')))
+    try:
+        parts = list(map(int, code.split('_')))
+    except ValueError:
+        raise ValueError(f"Código inválido recibido en code_to_index: '{code}'")
+
     state = parts[-1]
     param_indices = parts[:-1]
 
@@ -211,10 +219,24 @@ def get_semicode_from_candle(candle, param_bins):
 
 def get_code_from_semicode_and_state(semicode, state):
     """
-    Codifica un semicode + estado en un string único, con el estado al final.
-    Ejemplo: "2_1_0_1" donde (2,1,0) es el semicode y 1 es el estado.
+    Convierte semicode (en tupla o string tipo "(2, 2, 0)") + estado en código único: "2_2_0_1"
     """
-    return "_".join(map(str, semicode)) + f"_{state}"
+    # Si es string, intentar convertirlo en tupla de forma segura
+    if isinstance(semicode, str):
+        try:
+            semicode = ast.literal_eval(semicode)  # Seguro para strings como "(2, 1, 0)"
+        except Exception as e:
+            raise ValueError(f"Semicode string malformado: {semicode}") from e
+
+    # Verificar que ahora sea tupla o lista
+    if not isinstance(semicode, (list, tuple)):
+        raise ValueError(f"Semicode debe ser lista o tupla, recibido: {type(semicode)} -> {semicode}")
+
+    # Formatear a string tipo "2_1_0_1"
+    code = "_".join(map(str, semicode)) + f"_{state}"
+    return code
+
+
 
 if __name__ == "__main__":
     acciones = {0: "NO HACER NADA", 1: "ENTRAR", 2: "MANTENER", 3: "SALIR"}
