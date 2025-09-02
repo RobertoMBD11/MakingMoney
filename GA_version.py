@@ -6,7 +6,6 @@ from tqdm import tqdm  # pip install tqdm
 import datetime
 import pickle
 from utils import resumen_datos
-from joblib import Parallel, delayed
 
 # ==============================
 # CONFIGURACIÓN
@@ -82,53 +81,30 @@ def forward(individuo, x):
     return logits
 
 def masked_softmax(logits, mask):
-    # Hacemos una copia ligera para no modificar el original
-    logits = logits.astype(np.float32, copy=True)
-
-    # Aplicamos máscara en sitio
-    logits[~mask] = -1e9
-
-    # Softmax estable
-    max_val = np.max(logits)   # máximo para estabilidad numérica
-    exps = np.exp(logits - max_val, dtype=np.float32)
-    return exps / exps.sum()
-
+    masked_logits = np.where(mask, logits, -1e9)
+    exps = np.exp(masked_logits - np.max(masked_logits))
+    return exps / np.sum(exps)
 
 def evaluate(individuo, data, features, commission=0.001):
-    closes = data["close"].to_numpy(dtype=np.float32)
-    X = data[features].to_numpy(dtype=np.float32)
-
     position_open = False
     entry_price = 0.0
     total_pnl = 0.0
-
-    for i in range(len(closes)):
-        price = closes[i]
-        feat = X[i]
-
-        if position_open:
-            unrealized_pnl = (price - entry_price) / entry_price
-        else:
-            unrealized_pnl = 1.0
-
-        x = np.concatenate((feat, [unrealized_pnl]))
+    for _, row in data.iterrows():
+        unrealized_pnl = (row['close'] - entry_price) / entry_price if position_open else 1.0
+        x = np.array(row[features].values.tolist() + [unrealized_pnl], dtype=np.float32)
         logits = forward(individuo, x)
-
         mask = np.array([1, 0, 1]) if position_open else np.array([1, 1, 0])
         probs = masked_softmax(logits, mask)
         action = np.argmax(probs)
-
         if action == 1 and not position_open:
             position_open = True
-            entry_price = price
+            entry_price = row['close']
         elif action == 2 and position_open:
-            pnl = (price - entry_price) / entry_price - commission
+            pnl = (row['close'] - entry_price) / entry_price - commission
             total_pnl += pnl
             position_open = False
             entry_price = 0.0
-
     return total_pnl
-
 
 def evaluate_on_multiple(individuo, all_dfs, features, n_samples=8):
     sampled_dfs = random.sample(all_dfs, min(n_samples, len(all_dfs)))
