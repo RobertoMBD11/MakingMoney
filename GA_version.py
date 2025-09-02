@@ -13,11 +13,11 @@ from utils import resumen_datos
 csv_folder = "csv_procesados"
 features = ['MA_4', 'MA_8', 'MA_16', 'ATR', 'RSI', 'momentum', 'vol_rel']
 
-population_size = 50     # Nº de individuos
-epochs = 2              # Nº de generaciones
+population_size = 70     # Nº de individuos
+epochs = 15              # Nº de generaciones
 n_dfs_per_epoch = 14      # Nº de CSVs aleatorios por evaluación
 mutation_sigma = 0.1
-mutation_rate = 0.1
+mutation_rate = 0.07
 top_fraction = 0.1       # Top 10% sobrevivientes
 
 layer_sizes = [len(features) + 1, 16, 3]  # input + hidden + output
@@ -130,10 +130,6 @@ def evaluate_on_multiple(individuo, all_dfs, features, n_samples=8):
     fitness_values = [evaluate(individuo, df, features) for df in sampled_dfs]
     return np.mean(fitness_values)
 
-def evaluate_on_multiple_not_random(individuo, dfs, features):
-    fitness_values = [evaluate(individuo, df, features) for df in dfs]
-    return np.mean(fitness_values)
-
 def evaluate_on_all(individuo, all_dfs, features):
     """
     Evalúa un individuo contra todos los CSVs cargados y devuelve:
@@ -175,7 +171,7 @@ for epoch in range(epochs):
     # ==============================
     fitness_list = []
     for ind in tqdm(population, desc="Evaluando individuos"):
-        fit = evaluate_on_multiple_not_random(ind, sampled_dfs, features)
+        fit = evaluate_on_multiple(ind, sampled_dfs, features, n_samples=len(sampled_dfs))
         fitness_list.append(fit)
 
     # ==============================
@@ -222,6 +218,8 @@ for epoch in range(epochs):
 # ==============================
 best_individual = population[0]
 print("Mejor individuo final evaluado:", evaluate_on_multiple(best_individual, all_dfs, features, n_samples=n_dfs_per_epoch))
+
+
 
 
 mean_fitness_best = evaluate_on_all(best_individual, all_dfs, features)[0]
