@@ -86,29 +86,52 @@ def masked_softmax(logits, mask):
     return exps / np.sum(exps)
 
 def evaluate(individuo, data, features, commission=0.001):
+    closes = data["close"].to_numpy(dtype=np.float32)
+    X = data[features].to_numpy(dtype=np.float32)
+
     position_open = False
     entry_price = 0.0
     total_pnl = 0.0
-    for _, row in data.iterrows():
-        unrealized_pnl = (row['close'] - entry_price) / entry_price if position_open else 1.0
-        x = np.array(row[features].values.tolist() + [unrealized_pnl], dtype=np.float32)
+
+    for i in range(len(closes)):
+        price = closes[i]
+        feat = X[i]
+
+        if position_open:
+            if entry_price != 0:
+                unrealized_pnl = (price - entry_price) / entry_price
+            else:
+                unrealized_pnl = 0.0  # previene división por cero
+        else:
+            unrealized_pnl = 1.0
+
+        # Aseguramos que x sea 1D float32
+        x = np.hstack((feat, np.array([unrealized_pnl], dtype=np.float32)))
+
         logits = forward(individuo, x)
         mask = np.array([1, 0, 1]) if position_open else np.array([1, 1, 0])
         probs = masked_softmax(logits, mask)
         action = np.argmax(probs)
+
         if action == 1 and not position_open:
             position_open = True
-            entry_price = row['close']
+            entry_price = price
         elif action == 2 and position_open:
-            pnl = (row['close'] - entry_price) / entry_price - commission
+            pnl = (price - entry_price) / entry_price - commission
             total_pnl += pnl
             position_open = False
             entry_price = 0.0
+
     return total_pnl
+
 
 def evaluate_on_multiple(individuo, all_dfs, features, n_samples=8):
     sampled_dfs = random.sample(all_dfs, min(n_samples, len(all_dfs)))
     fitness_values = [evaluate(individuo, df, features) for df in sampled_dfs]
+    return np.mean(fitness_values)
+
+def evaluate_on_multiple_not_random(individuo, dfs, features):
+    fitness_values = [evaluate(individuo, df, features) for df in dfs]
     return np.mean(fitness_values)
 
 def evaluate_on_all(individuo, all_dfs, features):
@@ -140,27 +163,38 @@ if best_file_path:
 # BUCLE DE EVOLUCIÓN
 # ==============================
 for epoch in range(epochs):
-    # Evaluar población con barra de progreso
-    fitness_list = []
     print(f"\nEpoch {epoch+1}/{epochs}")
+
+    # ==============================
+    # Pre-selección de CSVs para toda la epoch
+    # ==============================
+    sampled_dfs = random.sample(all_dfs, min(n_dfs_per_epoch, len(all_dfs)))
+
+    # ==============================
+    # Evaluar población
+    # ==============================
+    fitness_list = []
     for ind in tqdm(population, desc="Evaluando individuos"):
-        fit = evaluate_on_multiple(ind, all_dfs, features, n_samples=n_dfs_per_epoch)
+        fit = evaluate_on_multiple_not_random(ind, sampled_dfs, features)
         fitness_list.append(fit)
-    
+
+    # ==============================
     # Ordenar por fitness descendente
+    # ==============================
     sorted_indices = np.argsort(fitness_list)[::-1]
     population = [population[i] for i in sorted_indices]
     fitness_list = [fitness_list[i] for i in sorted_indices]
 
+    # ==============================
     # Mostrar info
+    # ==============================
     top_n = max(1, int(population_size * top_fraction))
     print(f"Mejor fitness: {fitness_list[0]:.4f} | "
           f"Promedio top 10%: {np.mean(fitness_list[:top_n]):.4f}")
 
     # ==============================
-    # GUARDAR MEJOR INDIVIDUO DE LA EPOCH
+    # Guardar mejor individuo de la epoch
     # ==============================
-    import pickle
     best_epoch_individual = population[0]
     mean_fitness_all = fitness_list[0]
     filename = f"epoch{epoch+1:02d}_fitness{mean_fitness_all:.4f}.pkl"
@@ -170,7 +204,7 @@ for epoch in range(epochs):
     print(f"Guardado mejor individuo de la epoch {epoch+1} en {filename}")
 
     # ==============================
-    # SELECCIÓN Y MUTACIÓN
+    # Selección y mutación
     # ==============================
     top_individuals = population[:top_n]
 
@@ -188,8 +222,6 @@ for epoch in range(epochs):
 # ==============================
 best_individual = population[0]
 print("Mejor individuo final evaluado:", evaluate_on_multiple(best_individual, all_dfs, features, n_samples=n_dfs_per_epoch))
-
-
 
 
 mean_fitness_best = evaluate_on_all(best_individual, all_dfs, features)[0]
