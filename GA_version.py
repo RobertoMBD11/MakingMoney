@@ -6,44 +6,9 @@ from tqdm import tqdm  # pip install tqdm
 import datetime
 import pickle
 from utils import resumen_datos
+import glob
+from concurrent.futures import ProcessPoolExecutor
 
-# ==============================
-# CONFIGURACIÓN
-# ==============================
-csv_folder = "csv_procesados"
-features = ['MA_4', 'MA_8', 'MA_16', 'ATR', 'RSI', 'momentum', 'vol_rel']
-
-population_size = 70     # Nº de individuos
-epochs = 15              # Nº de generaciones
-n_dfs_per_epoch = 14      # Nº de CSVs aleatorios por evaluación
-mutation_sigma = 0.1
-mutation_rate = 0.07
-top_fraction = 0.1       # Top 10% sobrevivientes
-
-layer_sizes = [len(features) + 1, 16, 3]  # input + hidden + output
-
-#best_file_path = "results_20250901_192458/epoch07_fitness0.0781.pkl" 
-best_file_path = None
-
-# ==============================
-# ID TRAINING
-# ==============================
-# ID único del entrenamiento
-train_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-results_folder = f"results_{train_id}"
-os.makedirs(results_folder, exist_ok=True)
-print(f"Resultados se guardarán en: {results_folder}")
-
-# ==============================
-# CARGAR CSVS
-# ==============================
-all_dfs = []
-for file in os.listdir(csv_folder):
-    if file.endswith(".csv"):
-        df = pd.read_csv(os.path.join(csv_folder, file))
-        all_dfs.append(df)
-
-print(f"Se han cargado {len(all_dfs)} CSVs procesados.")
 
 # ==============================
 # INICIALIZACIÓN DE FUNCIÓN DE INDIVIDUO
@@ -56,7 +21,7 @@ def init_individual(layer_sizes, limit=2.0):
         params.extend([W, b])
     return params
 
-def mutate(individual, sigma=mutation_sigma, limit=2.0, mutation_rate=mutation_rate):
+def mutate(individual, sigma=0.1, limit=2.0, mutation_rate=0.1):
     new_individual = []
     for param in individual:
         param_copy = param.copy()
@@ -125,8 +90,12 @@ def evaluate(individuo, data, features, commission=0.001):
     return total_pnl
 
 
-def evaluate_on_multiple(individuo, all_dfs, features, n_samples=8):
-    sampled_dfs = random.sample(all_dfs, min(n_samples, len(all_dfs)))
+def evaluate_on_multiple(individuo, all_dfs, features, n_samples=8, random=False):
+    if random:
+        sampled_dfs = random.sample(all_dfs, min(n_samples, len(all_dfs)))
+    else:
+        sampled_dfs = all_dfs[:n_samples]  # toma los primeros n_samples de la lista
+
     fitness_values = [evaluate(individuo, df, features) for df in sampled_dfs]
     return np.mean(fitness_values)
 
@@ -140,91 +109,194 @@ def evaluate_on_all(individuo, all_dfs, features):
     mean_fitness = np.mean(fitness_list)
     return mean_fitness, fitness_list
 
-# ==============================
-# INICIALIZACIÓN DE POBLACIÓN
-# ==============================
-population = [init_individual(layer_sizes) for _ in range(population_size)]
+def _evaluate_helper(args):
+    individuo, df, features = args
+    return evaluate(individuo, df, features)
 
-if best_file_path:
-    with open(best_file_path, "rb") as f:
-        best_individual_loaded = pickle.load(f)
-    population[0] = best_individual_loaded
+def evaluate_on_all_optimized(individuo, all_dfs, features, n_jobs=None):
+    tasks = [(individuo, df, features) for df in all_dfs]
 
-#print("Mejor individuo final evaluado:", evaluate_on_multiple(population[0], all_dfs, features, n_samples=n_dfs_per_epoch))
-#mean_fitness_best, fitness_list = evaluate_on_all(population[0], all_dfs, features)
-#print(f"Mean 7 years fitness: {mean_fitness_best}")
-#resumen_datos(fitness_list, plot=True)
+    with ProcessPoolExecutor(max_workers=n_jobs) as executor:
+        fitness_values = list(executor.map(_evaluate_helper, tasks))
 
-# ==============================
-# BUCLE DE EVOLUCIÓN
-# ==============================
-for epoch in range(epochs):
-    print(f"\nEpoch {epoch+1}/{epochs}")
+    return np.mean(fitness_values)
+
+if __name__ == "__main__":
+    # ==============================
+    # CONFIGURACIÓN
+    # ==============================
+    #csv_folder = "csv_procesados"
+    csv_folder = "dias_estables"
+    features = ['MA_4', 'MA_8', 'MA_16', 'ATR', 'RSI', 'momentum', 'vol_rel']
+
+    population_size = 100     # Nº de individuos
+    epochs = 60              # Nº de generaciones
+    n_dfs_per_epoch = 100      # Nº de CSVs aleatorios por evaluación
+    mutation_sigma = 0.1
+    mutation_rate = 0.1
+    top_fraction = 0.3       # Top 10% sobrevivientes
+
+    layer_sizes = [len(features) + 1, 16, 3]  # input + hidden + output
+
+    #best_file_path = "results_20250902_125247_60epocs_0056/last_best_epoch02.pkl" 
+    #best_file_path = "results_20250905_172330_trained_from_normal/best_0.0143.pkl"
+    best_file_path = None
+
+    previous_top_folder = "results_20250902_125247_60epocs_0056/top_10"
+    #previous_top_folder = None
+    # ==============================
+    # ID TRAINING
+    # ==============================
+    # ID único del entrenamiento
+    train_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_folder = f"results_{train_id}"
+    os.makedirs(results_folder, exist_ok=True)
+    print(f"Resultados se guardarán en: {results_folder}")
 
     # ==============================
-    # Pre-selección de CSVs para toda la epoch
+    # CARGAR CSVS
     # ==============================
-    sampled_dfs = random.sample(all_dfs, min(n_dfs_per_epoch, len(all_dfs)))
+    all_dfs = []
+    for file in os.listdir(csv_folder):
+        if file.endswith(".csv"):
+            df = pd.read_csv(os.path.join(csv_folder, file))
+            all_dfs.append(df)
+
+    print(f"Se han cargado {len(all_dfs)} CSVs procesados.")
+    # ==============================
+    # INICIALIZACIÓN DE POBLACIÓN
+    # ==============================
+    population = [init_individual(layer_sizes) for _ in range(population_size)]
+
+    if best_file_path:
+        with open(best_file_path, "rb") as f:
+            best_individual_loaded = pickle.load(f)
+        population[0] = best_individual_loaded
+
+    if previous_top_folder:
+        import glob
+        top_files = sorted(glob.glob(os.path.join(previous_top_folder, "*.pkl")))
+        top_individuals_loaded = []
+
+        for file in top_files:
+            with open(file, "rb") as f:
+                ind = pickle.load(f)
+                top_individuals_loaded.append(ind)
+
+        # Sustituir los 10 primeros individuos
+        for i, ind in enumerate(top_individuals_loaded[:10]):
+            population[i] = ind
+
+        print(f"Sobrescritos {len(top_individuals_loaded[:10])} individuos con el top 10 previo")
+
+    """print("Mejor individuo final evaluado:", evaluate_on_multiple(population[0], all_dfs, features, n_samples=n_dfs_per_epoch))
+    mean_fitness_best, fitness_list = evaluate_on_all(population[0], all_dfs, features)
+    print(f"Mean 7 years fitness: {mean_fitness_best}")
+    resumen_datos(fitness_list, plot=True)"""
 
     # ==============================
-    # Evaluar población
+    # BUCLE DE EVOLUCIÓN CON NUEVOS CHECKPOINTS
     # ==============================
-    fitness_list = []
-    for ind in tqdm(population, desc="Evaluando individuos"):
-        fit = evaluate_on_multiple(ind, sampled_dfs, features, n_samples=len(sampled_dfs))
-        fitness_list.append(fit)
+    historical_best_individuals = []  # guardaremos tuplas (fitness, individuo)
+
+    best_fitness_overall = -np.inf
+    best_individual_overall = None
+
+    for epoch in range(epochs):
+        print(f"\nEpoch {epoch+1}/{epochs}")
+
+        # Pre-selección de CSVs para toda la epoch
+        sampled_dfs = random.sample(all_dfs, min(n_dfs_per_epoch, len(all_dfs)))
+
+        # Evaluar población
+        fitness_list = []
+        for ind in tqdm(population, desc="Evaluando individuos"):
+            #fit = evaluate_on_multiple(ind, sampled_dfs, features, n_samples=len(sampled_dfs))
+            fit = evaluate_on_all_optimized(ind, sampled_dfs, features, n_jobs=None)
+            fitness_list.append(fit)
+
+        # Ordenar por fitness descendente
+        sorted_indices = np.argsort(fitness_list)[::-1]
+        population = [population[i] for i in sorted_indices]
+        fitness_list = [fitness_list[i] for i in sorted_indices]
+
+        # Mostrar info
+        top_n = max(1, int(population_size * top_fraction))
+        print(f"Mejor fitness epoch: {fitness_list[0]:.4f} | "
+            f"Promedio top 10%: {np.mean(fitness_list[:top_n]):.4f}")
+
+        # ==============================
+        # Guardar checkpoints
+        # ==============================
+        # 1️⃣ Mejor individuo de la epoch (sobreescribe cada epoch)
+        last_best_path = os.path.join(results_folder, f"last_best.pkl")
+        with open(last_best_path, "wb") as f:
+            pickle.dump(population[0], f)
+
+        # 2️⃣ Mejor individuo histórico hasta ahora
+        if fitness_list[0] > best_fitness_overall:
+            best_fitness_overall = fitness_list[0]
+            best_individual_overall = population[0]
+            best_path = os.path.join(results_folder, f"best_{best_fitness_overall:.4f}.pkl")
+            with open(best_path, "wb") as f:
+                pickle.dump(best_individual_overall, f)
+
+        # Guardar todos los mejores históricos para top 10 final
+        historical_best_individuals.append((fitness_list[0], population[0]))
+
+        # ==============================
+        # Selección y mutación
+        # ==============================
+        top_individuals = population[:top_n]
+        new_population = []
+        while len(new_population) < population_size:
+            parent = random.choice(top_individuals)
+            child = mutate(parent)
+            new_population.append(child)
+        population = new_population
+
 
     # ==============================
-    # Ordenar por fitness descendente
+    # Guardar top 10 de la última generación
     # ==============================
-    sorted_indices = np.argsort(fitness_list)[::-1]
-    population = [population[i] for i in sorted_indices]
-    fitness_list = [fitness_list[i] for i in sorted_indices]
+    top_10_folder = os.path.join(results_folder, "top_10")
+    os.makedirs(top_10_folder, exist_ok=True)
+
+    # Ordenar la población final por fitness
+    fitness_list_final = []
+    for ind in population[:10]:
+        fit = evaluate_on_all(ind, all_dfs, features)[0]
+        fitness_list_final.append(fit)
+
+    sorted_indices = np.argsort(fitness_list_final)[::-1]
+    population_sorted = [population[i] for i in sorted_indices]
+    fitness_sorted = [fitness_list_final[i] for i in sorted_indices]
+
+    # Guardar los 10 mejores individuos
+    for idx in range(min(10, len(population_sorted))):
+        ind = population_sorted[idx]
+        fit = fitness_sorted[idx]
+        filepath = os.path.join(top_10_folder, f"top{idx+1}_fitness{fit:.4f}.pkl")
+        with open(filepath, "wb") as f:
+            pickle.dump(ind, f)
+
+    print(f"Guardados los 10 mejores individuos de la última generación en {top_10_folder}")
+
 
     # ==============================
-    # Mostrar info
+    # Resultado final
     # ==============================
-    top_n = max(1, int(population_size * top_fraction))
-    print(f"Mejor fitness: {fitness_list[0]:.4f} | "
-          f"Promedio top 10%: {np.mean(fitness_list[:top_n]):.4f}")
-
-    # ==============================
-    # Guardar mejor individuo de la epoch
-    # ==============================
-    best_epoch_individual = population[0]
-    mean_fitness_all = fitness_list[0]
-    filename = f"epoch{epoch+1:02d}_fitness{mean_fitness_all:.4f}.pkl"
-    filepath = os.path.join(results_folder, filename)
-    with open(filepath, "wb") as f:
-        pickle.dump(best_epoch_individual, f)
-    print(f"Guardado mejor individuo de la epoch {epoch+1} en {filename}")
-
-    # ==============================
-    # Selección y mutación
-    # ==============================
-    top_individuals = population[:top_n]
-
-    new_population = []
-    while len(new_population) < population_size:
-        parent = random.choice(top_individuals)
-        child = mutate(parent)
-        new_population.append(child)
-
-    population = new_population
+    best_individual = population[0]
+    print("Mejor individuo final evaluado:", evaluate_on_multiple(best_individual, all_dfs, features, n_samples=n_dfs_per_epoch))
 
 
-# ==============================
-# Resultado final
-# ==============================
-best_individual = population[0]
-print("Mejor individuo final evaluado:", evaluate_on_multiple(best_individual, all_dfs, features, n_samples=n_dfs_per_epoch))
+    mean_fitness_best, fitness_list = evaluate_on_all(best_individual, all_dfs, features)
+    print(f"Mean 7 years fitness: {mean_fitness_best}")
+    resumen_datos(fitness_list, plot=True)
 
 
-
-
-mean_fitness_best = evaluate_on_all(best_individual, all_dfs, features)[0]
-filename_best = f"final_best_fitness{mean_fitness_best:.4f}.pkl"
-filepath_best = os.path.join(results_folder, filename_best)
-with open(filepath_best, "wb") as f:
-    pickle.dump(best_individual, f)
-print(f"Guardado mejor individuo final en {filename_best}")
+    filename_best = f"final_best_fitness{mean_fitness_best:.4f}.pkl"
+    filepath_best = os.path.join(results_folder, filename_best)
+    with open(filepath_best, "wb") as f:
+        pickle.dump(best_individual, f)
+    print(f"Guardado mejor individuo final en {filename_best}")
