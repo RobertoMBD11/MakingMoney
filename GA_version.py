@@ -121,6 +121,17 @@ def evaluate_on_all_optimized(individuo, all_dfs, features, n_jobs=None):
 
     return np.mean(fitness_values)
 
+def _evaluate_individual(args):
+    ind, sampled_dfs, features = args
+    # aquí usamos evaluate directamente en todos los dfs
+    return np.mean([evaluate(ind, df, features) for df in sampled_dfs])
+
+def evaluate_population(population, sampled_dfs, features, n_jobs=None):
+    tasks = [(ind, sampled_dfs, features) for ind in population]
+    with ProcessPoolExecutor(max_workers=n_jobs) as executor:
+        fitness_list = list(executor.map(_evaluate_individual, tasks))
+    return fitness_list
+
 if __name__ == "__main__":
     # ==============================
     # CONFIGURACIÓN
@@ -210,10 +221,13 @@ if __name__ == "__main__":
 
         # Evaluar población
         fitness_list = []
-        for ind in tqdm(population, desc="Evaluando individuos"):
+        #for ind in tqdm(population, desc="Evaluando individuos"):
             #fit = evaluate_on_multiple(ind, sampled_dfs, features, n_samples=len(sampled_dfs))
-            fit = evaluate_on_all_optimized(ind, sampled_dfs, features, n_jobs=None)
-            fitness_list.append(fit)
+            #fit = evaluate_on_all_optimized(ind, sampled_dfs, features, n_jobs=None)
+            #fitness_list.append(fit)
+
+        print("Evaluando individuos en paralelo...")
+        fitness_list = evaluate_population(population, sampled_dfs, features, n_jobs=None)
 
         # Ordenar por fitness descendente
         sorted_indices = np.argsort(fitness_list)[::-1]
