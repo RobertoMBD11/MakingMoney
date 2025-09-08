@@ -109,18 +109,6 @@ def evaluate_on_all(individuo, all_dfs, features):
     mean_fitness = np.mean(fitness_list)
     return mean_fitness, fitness_list
 
-def _evaluate_helper(args):
-    individuo, df, features = args
-    return evaluate(individuo, df, features)
-
-def evaluate_on_all_optimized(individuo, all_dfs, features, n_jobs=None):
-    tasks = [(individuo, df, features) for df in all_dfs]
-
-    with ProcessPoolExecutor(max_workers=n_jobs) as executor:
-        fitness_values = list(executor.map(_evaluate_helper, tasks))
-
-    return np.mean(fitness_values)
-
 def _evaluate_individual(args):
     ind, sampled_dfs, features = args
     # aquí usamos evaluate directamente en todos los dfs
@@ -136,8 +124,8 @@ if __name__ == "__main__":
     # ==============================
     # CONFIGURACIÓN
     # ==============================
-    #csv_folder = "csv_procesados"
-    csv_folder = "dias_estables"
+    csv_folder = "training_csv"
+    #csv_folder = "dias_estables"
     features = ['MA_4', 'MA_8', 'MA_16', 'ATR', 'RSI', 'momentum', 'vol_rel']
 
     population_size = 100     # Nº de individuos
@@ -149,12 +137,15 @@ if __name__ == "__main__":
 
     layer_sizes = [len(features) + 1, 16, 3]  # input + hidden + output
 
+    best_file_path = None
     #best_file_path = "results_20250902_125247_60epocs_0056/last_best_epoch02.pkl" 
     #best_file_path = "results_20250905_172330_trained_from_normal/best_0.0143.pkl"
-    best_file_path = None
-
-    previous_top_folder = "results_20250902_125247_60epocs_0056/top_10"
-    #previous_top_folder = None
+    #best_file_path = "results_20250905_175715/final_best_fitness0.0072.pkl"
+    
+    previous_top_folder = None
+    #previous_top_folder = "results_20250902_125247_60epocs_0056/top_10"
+    #previous_top_folder = "results_20250905_175715/top10"
+    
     # ==============================
     # ID TRAINING
     # ==============================
@@ -200,8 +191,7 @@ if __name__ == "__main__":
 
         print(f"Sobrescritos {len(top_individuals_loaded[:10])} individuos con el top 10 previo")
 
-    """print("Mejor individuo final evaluado:", evaluate_on_multiple(population[0], all_dfs, features, n_samples=n_dfs_per_epoch))
-    mean_fitness_best, fitness_list = evaluate_on_all(population[0], all_dfs, features)
+    """mean_fitness_best, fitness_list = evaluate_on_all(population[0], all_dfs, features)
     print(f"Mean 7 years fitness: {mean_fitness_best}")
     resumen_datos(fitness_list, plot=True)"""
 
@@ -221,10 +211,6 @@ if __name__ == "__main__":
 
         # Evaluar población
         fitness_list = []
-        #for ind in tqdm(population, desc="Evaluando individuos"):
-            #fit = evaluate_on_multiple(ind, sampled_dfs, features, n_samples=len(sampled_dfs))
-            #fit = evaluate_on_all_optimized(ind, sampled_dfs, features, n_jobs=None)
-            #fitness_list.append(fit)
 
         print("Evaluando individuos en paralelo...")
         fitness_list = evaluate_population(population, sampled_dfs, features, n_jobs=None)
@@ -301,8 +287,6 @@ if __name__ == "__main__":
     # Resultado final
     # ==============================
     best_individual = population[0]
-    print("Mejor individuo final evaluado:", evaluate_on_multiple(best_individual, all_dfs, features, n_samples=n_dfs_per_epoch))
-
 
     mean_fitness_best, fitness_list = evaluate_on_all(best_individual, all_dfs, features)
     print(f"Mean 7 years fitness: {mean_fitness_best}")
